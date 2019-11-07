@@ -123,7 +123,7 @@ func DecodeClusterName(serverName string) (string, error) {
 	}
 	const suffix = "." + teleport.APIDomain
 	if !strings.HasSuffix(serverName, suffix) {
-		return "", trace.BadParameter("unrecognized name, expected suffix %v, got %q", teleport.APIDomain, serverName)
+		return "", trace.NotFound("no cluster name is encoded")
 	}
 	clusterName := strings.TrimSuffix(serverName, suffix)
 
@@ -2530,6 +2530,205 @@ func (c *Client) DeleteTrustedCluster(name string) error {
 	return trace.Wrap(err)
 }
 
+func (c *Client) GetAccessRequests(filter services.AccessRequestFilter) ([]services.AccessRequest, error) {
+	clt, err := c.grpc()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	rsp, err := clt.GetAccessRequests(context.TODO(), &filter)
+	if err != nil {
+		return nil, trail.FromGRPC(err)
+	}
+	reqs := make([]services.AccessRequest, 0, len(rsp.AccessRequests))
+	for _, req := range rsp.AccessRequests {
+		reqs = append(reqs, req)
+	}
+	return reqs, nil
+}
+
+func (c *Client) WatchAccessRequests(ctx context.Context, filter services.AccessRequestFilter) (AccessRequestWatcher, error) {
+	clt, err := c.grpc()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	cancelCtx, cancel := context.WithCancel(ctx)
+	stream, err := clt.WatchAccessRequests(cancelCtx, &filter)
+	if err != nil {
+		cancel()
+		return nil, trail.FromGRPC(err)
+	}
+	w := &roleRequestStreamWatcher{
+		stream: stream,
+		ctx:    cancelCtx,
+		cancel: cancel,
+		reqC:   make(chan services.AccessRequest),
+	}
+	go w.receiveEvents()
+	return w, nil
+}
+
+func (c *Client) CreateAccessRequest(req services.AccessRequest) error {
+	r, ok := req.(*services.AccessRequestV1)
+	if !ok {
+		return trace.BadParameter("unexpected access request type %T", req)
+	}
+	clt, err := c.grpc()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	_, err = clt.CreateAccessRequest(context.TODO(), r)
+	if err != nil {
+		return trail.FromGRPC(err)
+	}
+	return nil
+}
+
+func (c *Client) DeleteAccessRequest(reqID string) error {
+	clt, err := c.grpc()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	_, err = clt.DeleteAccessRequest(context.TODO(), &proto.RequestID{
+		ID: reqID,
+	})
+	if err != nil {
+		return trail.FromGRPC(err)
+	}
+	return nil
+}
+
+func (c *Client) SetAccessRequestState(reqID string, state services.RequestState) error {
+	clt, err := c.grpc()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	_, err = clt.SetAccessRequestState(context.TODO(), &proto.RequestStateSetter{
+		ID:    reqID,
+		State: state,
+	})
+	if err != nil {
+		return trail.FromGRPC(err)
+	}
+	return nil
+}
+
+// AccessRequestWatcher monitors creation/updates of access requests.
+type AccessRequestWatcher interface {
+	AccessRequests() <-chan services.AccessRequest
+	Done() <-chan struct{}
+	Close() error
+	Error() error
+}
+
+type roleRequestStreamWatcher struct {
+	sync.RWMutex
+	stream proto.AuthService_WatchAccessRequestsClient
+	ctx    context.Context
+	cancel context.CancelFunc
+	reqC   chan services.AccessRequest
+	err    error
+}
+
+func (w *roleRequestStreamWatcher) Error() error {
+	w.RLock()
+	defer w.RUnlock()
+	return w.err
+}
+
+func (w *roleRequestStreamWatcher) closeWithError(err error) {
+	w.Close()
+	w.Lock()
+	defer w.Unlock()
+	w.err = err
+}
+
+func (w *roleRequestStreamWatcher) AccessRequests() <-chan services.AccessRequest {
+	return w.reqC
+}
+
+func (w *roleRequestStreamWatcher) receiveEvents() {
+	for {
+		req, err := w.stream.Recv()
+		if err != nil {
+			w.closeWithError(trail.FromGRPC(err))
+			return
+		}
+		select {
+		case w.reqC <- req:
+		case <-w.Done():
+			return
+		}
+	}
+}
+
+func (w *roleRequestStreamWatcher) Done() <-chan struct{} {
+	return w.ctx.Done()
+}
+
+func (w *roleRequestStreamWatcher) Close() error {
+	w.cancel()
+	return nil
+}
+
+// newAccessRequestWatcherFromEvents builds AccessRequestWatcher from an Events service.
+func newAccessRequestWatcherFromEvents(ctx context.Context, events services.Events, filter services.AccessRequestFilter) (AccessRequestWatcher, error) {
+	baseWatcher, err := events.NewWatcher(ctx, services.Watch{
+		Name: "access-request-watcher",
+		Kinds: []services.WatchKind{
+			services.WatchKind{
+				Kind: services.KindAccessRequest,
+				Name: filter.ID,
+			},
+		},
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	reqC := make(chan services.AccessRequest)
+	watcher := &roleRequestEventWatcher{
+		Watcher: baseWatcher,
+		filter:  filter,
+		reqC:    reqC,
+	}
+	go watcher.handleEvents()
+	return watcher, nil
+}
+
+type roleRequestEventWatcher struct {
+	services.Watcher
+	filter services.AccessRequestFilter
+	reqC   chan services.AccessRequest
+}
+
+func (r *roleRequestEventWatcher) AccessRequests() <-chan services.AccessRequest {
+	return r.reqC
+}
+
+func (r *roleRequestEventWatcher) handleEvents() {
+Loop:
+	for {
+		select {
+		case event := <-r.Watcher.Events():
+			switch event.Type {
+			case backend.OpInit, backend.OpPut:
+				req, ok := event.Resource.(*services.AccessRequestV1)
+				if !ok {
+					// TODO: log unexpected type
+					continue Loop
+				}
+				if !r.filter.Match(req) {
+					continue Loop
+				}
+				r.reqC <- req
+			default:
+				continue Loop
+			}
+		case <-r.Done():
+			return
+		}
+	}
+}
+
 // WebService implements features used by Web UI clients
 type WebService interface {
 	// GetWebSessionInfo checks if a web sesion is valid, returns session id in case if
@@ -2750,4 +2949,14 @@ type ClientI interface {
 	// ProcessKubeCSR processes CSR request against Kubernetes CA, returns
 	// signed certificate if sucessful.
 	ProcessKubeCSR(req KubeCSR) (*KubeCSRResponse, error)
+	// GetAccessRequests lists all existing access requests.
+	GetAccessRequests(services.AccessRequestFilter) ([]services.AccessRequest, error)
+	// WatchAccessRequests sets up a specialized access request watcher.
+	WatchAccessRequests(ctx context.Context, filter services.AccessRequestFilter) (AccessRequestWatcher, error)
+	// CreateAccessRequest creates a new access request.
+	CreateAccessRequest(req services.AccessRequest) error
+	// DeleteAccessRequest deletes an access request.
+	DeleteAccessRequest(reqID string) error
+	// SetAccessRequestState updates the state of an existing access request.
+	SetAccessRequestState(reqID string, state services.RequestState) error
 }

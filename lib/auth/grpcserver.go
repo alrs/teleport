@@ -185,6 +185,99 @@ func (g *GRPCServer) GetUsers(req *proto.GetUsersRequest, stream proto.AuthServi
 	return nil
 }
 
+func (g *GRPCServer) GetAccessRequests(ctx context.Context, f *services.AccessRequestFilter) (*proto.AccessRequests, error) {
+	auth, err := g.authenticate(ctx)
+	if err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	var filter services.AccessRequestFilter
+	if f != nil {
+		filter = *f
+	}
+	reqs, err := auth.AuthWithRoles.GetAccessRequests(filter)
+	if err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	collector := make([]*services.AccessRequestV1, 0, len(reqs))
+	for _, req := range reqs {
+		r, ok := req.(*services.AccessRequestV1)
+		if !ok {
+			err = trace.BadParameter("unexpected access request type %T", req)
+			return nil, trail.ToGRPC(err)
+		}
+		collector = append(collector, r)
+	}
+	return &proto.AccessRequests{
+		AccessRequests: collector,
+	}, nil
+}
+
+func (g *GRPCServer) WatchAccessRequests(f *services.AccessRequestFilter, stream proto.AuthService_WatchAccessRequestsServer) error {
+	auth, err := g.authenticate(stream.Context())
+	if err != nil {
+		return trail.ToGRPC(err)
+	}
+	var filter services.AccessRequestFilter
+	if f != nil {
+		filter = *f
+	}
+
+	watcher, err := auth.WatchAccessRequests(stream.Context(), filter)
+	if err != nil {
+		return trail.ToGRPC(err)
+	}
+	defer watcher.Close()
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-watcher.Done():
+			return trail.ToGRPC(watcher.Error())
+		case r := <-watcher.AccessRequests():
+			req, ok := r.(*services.AccessRequestV1)
+			if !ok {
+				return trail.ToGRPC(trace.BadParameter("unexpected request type %T", r))
+			}
+			if err := stream.Send(req); err != nil {
+				return trail.ToGRPC(err)
+			}
+		}
+	}
+}
+
+func (g *GRPCServer) CreateAccessRequest(ctx context.Context, req *services.AccessRequestV1) (*empty.Empty, error) {
+	auth, err := g.authenticate(ctx)
+	if err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	if err := auth.AuthWithRoles.CreateAccessRequest(req); err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	return &empty.Empty{}, nil
+}
+
+func (g *GRPCServer) DeleteAccessRequest(ctx context.Context, id *proto.RequestID) (*empty.Empty, error) {
+	auth, err := g.authenticate(ctx)
+	if err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	if err := auth.AuthWithRoles.DeleteAccessRequest(id.ID); err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	return &empty.Empty{}, nil
+}
+
+func (g *GRPCServer) SetAccessRequestState(ctx context.Context, req *proto.RequestStateSetter) (*empty.Empty, error) {
+	auth, err := g.authenticate(ctx)
+	if err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	if err := auth.SetAccessRequestState(req.ID, req.State); err != nil {
+		return nil, trail.ToGRPC(err)
+	}
+	return &empty.Empty{}, nil
+}
+
 type grpcContext struct {
 	*AuthContext
 	*AuthWithRoles
