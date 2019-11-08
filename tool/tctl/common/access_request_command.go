@@ -68,7 +68,7 @@ func (c *AccessRequestCommand) Initialize(app *kingpin.Application, config *serv
 	c.requestCreate.Arg("username", "Name of target user").Required().StringVar(&c.user)
 	c.requestCreate.Flag("roles", "Roles to be requested").Required().StringVar(&c.roles)
 
-	c.requestDelete = requests.Command("del", "Delete an access request")
+	c.requestDelete = requests.Command("rm", "Delete an access request")
 	c.requestDelete.Arg("request-id", "ID of target request(s)").Required().StringsVar(&c.reqIDs)
 }
 
