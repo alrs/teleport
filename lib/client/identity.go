@@ -55,6 +55,10 @@ const (
 	// two different files (in the same directory)
 	IdentityFormatOpenSSH IdentityFileFormat = "openssh"
 
+	// IdentityFormatTLS is a standard TLS format used by common TLS clients (e.g. GRPC) where
+	// certificate and key are stored in separate files.
+	IdentityFormatTLS IdentityFileFormat = "tls"
+
 	// DefaultIdentityFormat is what Teleport uses by default
 	DefaultIdentityFormat = IdentityFormatFile
 )
@@ -132,9 +136,34 @@ func MakeIdentityFile(filePath string, key *Key, format IdentityFileFormat, cert
 		if err != nil {
 			return trace.Wrap(err)
 		}
+
+	case IdentityFormatTLS:
+		keyPath := filePath + ".key"
+		certPath := filePath + ".crt"
+		casPath := filePath + ".cas"
+
+		err = ioutil.WriteFile(certPath, key.TLSCert, fileMode)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+
+		err = ioutil.WriteFile(keyPath, key.Priv, fileMode)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		var caCerts []byte
+		for _, ca := range certAuthorities {
+			for _, keyPair := range ca.GetTLSKeyPairs() {
+				caCerts = append(caCerts, keyPair.Cert...)
+			}
+		}
+		err = ioutil.WriteFile(casPath, caCerts, fileMode)
+		if err != nil {
+			return trace.Wrap(err)
+		}
 	default:
-		return trace.BadParameter("unsupported identity format: %q, use either %q or %q",
-			format, IdentityFormatFile, IdentityFormatOpenSSH)
+		return trace.BadParameter("unsupported identity format: %q, use one of %q, %q, or %q",
+			format, IdentityFormatFile, IdentityFormatOpenSSH, IdentityFormatTLS)
 	}
 	return nil
 }

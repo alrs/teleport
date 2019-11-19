@@ -983,6 +983,9 @@ func (a *AuthWithRoles) GenerateUserCerts(ctx context.Context, req proto.UserCer
 				return nil, trace.AccessDenied("invalid access request %q", reqID)
 			}
 			if !accessReq.GetState().IsApproved() {
+				if accessReq.GetState().IsDenied() {
+					return nil, trace.AccessDenied("access-request %q has been denied", reqID)
+				}
 				return nil, trace.AccessDenied("access-request %q is awaiting approval", reqID)
 			}
 			if err := a.authServer.validateAccessRequest(accessReq); err != nil {

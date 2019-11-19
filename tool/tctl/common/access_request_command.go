@@ -36,7 +36,7 @@ import (
 // It implements CLICommand interface
 type AccessRequestCommand struct {
 	config *service.Config
-	reqIDs []string
+	reqIDs string
 
 	user  string
 	roles string
@@ -59,17 +59,17 @@ func (c *AccessRequestCommand) Initialize(app *kingpin.Application, config *serv
 	c.requestList.Flag("format", "Output format, 'text' or 'json'").Hidden().Default(teleport.Text).StringVar(&c.format)
 
 	c.requestApprove = requests.Command("approve", "Approve pending access request")
-	c.requestApprove.Arg("request-id", "ID of target request(s)").Required().StringsVar(&c.reqIDs)
+	c.requestApprove.Arg("request-id", "ID of target request(s)").Required().StringVar(&c.reqIDs)
 
 	c.requestDeny = requests.Command("deny", "Deny pending access request")
-	c.requestDeny.Arg("request-id", "ID of target request(s)").Required().StringsVar(&c.reqIDs)
+	c.requestDeny.Arg("request-id", "ID of target request(s)").Required().StringVar(&c.reqIDs)
 
 	c.requestCreate = requests.Command("create", "Create pending access request")
 	c.requestCreate.Arg("username", "Name of target user").Required().StringVar(&c.user)
 	c.requestCreate.Flag("roles", "Roles to be requested").Required().StringVar(&c.roles)
 
 	c.requestDelete = requests.Command("rm", "Delete an access request")
-	c.requestDelete.Arg("request-id", "ID of target request(s)").Required().StringsVar(&c.reqIDs)
+	c.requestDelete.Arg("request-id", "ID of target request(s)").Required().StringVar(&c.reqIDs)
 }
 
 // TryRun takes the CLI command as an argument (like "access-request list") and executes it.
@@ -101,7 +101,7 @@ func (c *AccessRequestCommand) List(client auth.ClientI) error {
 }
 
 func (c *AccessRequestCommand) Approve(client auth.ClientI) error {
-	for _, reqID := range c.reqIDs {
+	for _, reqID := range strings.Split(c.reqIDs, ",") {
 		if err := client.SetAccessRequestState(reqID, services.RequestState_APPROVED); err != nil {
 			return trace.Wrap(err)
 		}
@@ -110,7 +110,7 @@ func (c *AccessRequestCommand) Approve(client auth.ClientI) error {
 }
 
 func (c *AccessRequestCommand) Deny(client auth.ClientI) error {
-	for _, reqID := range c.reqIDs {
+	for _, reqID := range strings.Split(c.reqIDs, ",") {
 		if err := client.SetAccessRequestState(reqID, services.RequestState_DENIED); err != nil {
 			return trace.Wrap(err)
 		}
@@ -132,7 +132,7 @@ func (c *AccessRequestCommand) Create(client auth.ClientI) error {
 }
 
 func (c *AccessRequestCommand) Delete(client auth.ClientI) error {
-	for _, reqID := range c.reqIDs {
+	for _, reqID := range strings.Split(c.reqIDs, ",") {
 		if err := client.DeleteAccessRequest(reqID); err != nil {
 			return trace.Wrap(err)
 		}
