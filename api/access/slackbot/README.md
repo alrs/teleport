@@ -31,7 +31,7 @@ to generate the required PEM files, and make sure that the Auth Server's
 GRPC API is accessible at the address indicated by `auth-server`.
 
 *NOTE*: The slackbot must be given a teleport user identity with
-apprpopriate permissions.  See the [acccess package README](../README.md)
+apprpopriate permissions.  See the [acccess package README](../README.md#authentication)
 for an example of how to configure an appropriate user & role.
 
 ### `[slack]`
