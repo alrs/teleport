@@ -822,14 +822,31 @@ func (a *AuthWithRoles) CreateAccessRequest(req services.AccessRequest) error {
 	if req.GetAccessExpiry().Before(a.authServer.GetClock().Now()) || req.GetAccessExpiry().After(a.identity.Expires) {
 		req.SetAccessExpiry(a.identity.Expires)
 	}
-	return a.authServer.CreateAccessRequest(req)
+	if err := a.authServer.CreateAccessRequest(req); err != nil {
+		return trace.Wrap(err)
+	}
+	err := a.authServer.EmitAuditEvent(events.RequestCreated, events.EventFields{
+		events.RequestID:    req.GetName(),
+		events.EventUser:    req.GetUser(),
+		events.UserRoles:    req.GetRoles(),
+		events.RequestState: req.GetState().String(),
+	})
+	return trace.Wrap(err)
 }
 
 func (a *AuthWithRoles) SetAccessRequestState(reqID string, state services.RequestState) error {
 	if err := a.action(defaults.Namespace, services.KindAccessRequest, services.VerbUpdate); err != nil {
 		return trace.Wrap(err)
 	}
-	return a.authServer.SetAccessRequestState(reqID, state)
+	if err := a.authServer.SetAccessRequestState(reqID, state); err != nil {
+		return trace.Wrap(err)
+	}
+	err := a.authServer.EmitAuditEvent(events.RequestUpdated, events.EventFields{
+		events.RequestID:       reqID,
+		events.RequestState:    state.String(),
+		events.RequestUpdateBy: a.user.GetName(),
+	})
+	return trace.Wrap(err)
 }
 
 func (a *AuthWithRoles) DeleteAccessRequest(name string) error {
