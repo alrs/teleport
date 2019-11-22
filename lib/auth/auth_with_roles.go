@@ -825,11 +825,11 @@ func (a *AuthWithRoles) CreateAccessRequest(req services.AccessRequest) error {
 	if err := a.authServer.CreateAccessRequest(req); err != nil {
 		return trace.Wrap(err)
 	}
-	err := a.authServer.EmitAuditEvent(events.RequestCreated, events.EventFields{
-		events.RequestID:    req.GetName(),
-		events.EventUser:    req.GetUser(),
-		events.UserRoles:    req.GetRoles(),
-		events.RequestState: req.GetState().String(),
+	err := a.authServer.EmitAuditEvent(events.AccessRequestCreated, events.EventFields{
+		events.AccessRequestID:    req.GetName(),
+		events.EventUser:          req.GetUser(),
+		events.UserRoles:          req.GetRoles(),
+		events.AccessRequestState: req.GetState().String(),
 	})
 	return trace.Wrap(err)
 }
@@ -841,10 +841,10 @@ func (a *AuthWithRoles) SetAccessRequestState(reqID string, state services.Reque
 	if err := a.authServer.SetAccessRequestState(reqID, state); err != nil {
 		return trace.Wrap(err)
 	}
-	err := a.authServer.EmitAuditEvent(events.RequestUpdated, events.EventFields{
-		events.RequestID:       reqID,
-		events.RequestState:    state.String(),
-		events.RequestUpdateBy: a.user.GetName(),
+	err := a.authServer.EmitAuditEvent(events.AccessRequestUpdated, events.EventFields{
+		events.AccessRequestID:       reqID,
+		events.AccessRequestState:    state.String(),
+		events.AccessRequestUpdateBy: a.user.GetName(),
 	})
 	return trace.Wrap(err)
 }
