@@ -390,9 +390,10 @@ message AccessRequestV1  {
 
 // RequestState represents the state of a request for escalated privilege.
 enum RequestState {
-    PENDING = 0;
-    APPROVED = 1;
-    DENIED = 2;
+    NONE = 0;
+    PENDING = 1;
+    APPROVED = 2;
+    DENIED = 3;
 }
 
 // AccessRequestSpec is the specification for AccessRequest
@@ -415,6 +416,8 @@ message AccessRequestFilter {
     string ID = 1 [(gogoproto.jsontag) = "id"];
     // User specifies a username if set.
     string User = 2 [(gogoproto.jsontag) = "user"];
+    // RequestState filters for requests in a specific state.
+    RequestState State = 3 [(gogoproto.jsontag) = "state"];
 }
 
 // RoleV3 represents role resource specification

@@ -1025,7 +1025,7 @@ func (m *RequestStateSetter) GetState() services.RequestState {
 	if m != nil {
 		return m.State
 	}
-	return services.RequestState_PENDING
+	return services.RequestState_NONE
 }
 
 // RequestID is the unique identifier of an access request.

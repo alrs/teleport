@@ -69,6 +69,9 @@ func (f *AccessRequestFilter) Match(req AccessRequest) bool {
 	if f.User != "" && req.GetUser() != f.User {
 		return false
 	}
+	if !f.State.IsNone() && req.GetState() != f.State {
+		return false
+	}
 	return true
 }
 
@@ -113,6 +116,10 @@ type AccessRequest interface {
 	CheckAndSetDefaults() error
 	// Equals checks equality between access request values.
 	Equals(AccessRequest) bool
+}
+
+func (s RequestState) IsNone() bool {
+	return s == RequestState_NONE
 }
 
 func (s RequestState) IsPending() bool {
@@ -189,6 +196,9 @@ func (r *AccessRequestV1) SetAccessExpiry(expiry time.Time) {
 func (r *AccessRequestV1) CheckAndSetDefaults() error {
 	if err := r.Metadata.CheckAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
+	}
+	if r.GetState().IsNone() {
+		r.SetState(RequestState_PENDING)
 	}
 	if err := r.Check(); err != nil {
 		return trace.Wrap(err)

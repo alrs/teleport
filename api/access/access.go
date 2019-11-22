@@ -120,7 +120,9 @@ type watcher struct {
 
 func newWatcher(ctx context.Context, clt proto.AuthServiceClient) (*watcher, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	stream, err := clt.WatchAccessRequests(ctx, &services.AccessRequestFilter{})
+	stream, err := clt.WatchAccessRequests(ctx, &services.AccessRequestFilter{
+		State: services.RequestState_PENDING,
+	})
 	if err != nil {
 		cancel()
 		return nil, trail.FromGRPC(err)
@@ -142,9 +144,6 @@ func (w *watcher) run() {
 		if err != nil {
 			w.setError(trail.FromGRPC(err))
 			return
-		}
-		if !req.GetState().IsPending() {
-			continue
 		}
 		w.reqC <- Request{
 			ID:    req.GetName(),
