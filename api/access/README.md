@@ -9,7 +9,7 @@ Access Requests.
 ## GRPC API
 
 The GRPC API, defined in [lib/auth/proto/auth.proto](../../lib/auth/proto/auth.proto),
-includes a hanfull of methods related to the `AccessRequest` resource.
+includes a handful of methods related to the `AccessRequest` resource.
 Most important for the purposes of *managing* access requests are the
 `WatchAccessRequests` and `SetAccessRequestState` methods:
 
